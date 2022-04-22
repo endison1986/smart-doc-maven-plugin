@@ -63,6 +63,57 @@ public class MojoUtils {
     }
   }).create();
 
+  public static ApiConfig buildConfig(ApiConfig apiConfig, String projectName, MavenProject project, ProjectBuilder projectBuilder
+          , MavenSession mavenSession, List<String> projectArtifacts, Log log) throws MojoExecutionException {
+      ClassLoader classLoader = ClassLoaderUtil.getRuntimeClassLoader(project);
+      List<ApiDataDictionary> apiDataDictionaries = apiConfig.getDataDictionaries();
+      List<ApiErrorCodeDictionary> apiErrorCodes = apiConfig.getErrorCodeDictionaries();
+      List<ApiConstant> apiConstants = apiConfig.getApiConstants();
+      BodyAdvice responseBodyAdvice = apiConfig.getResponseBodyAdvice();
+      BodyAdvice requestBodyAdvice = apiConfig.getRequestBodyAdvice();
+      if (Objects.nonNull(apiErrorCodes)) {
+        apiErrorCodes.forEach(
+                apiErrorCode -> {
+                  String className = apiErrorCode.getEnumClassName();
+                  apiErrorCode.setEnumClass(getClassByClassName(className, classLoader));
+                }
+        );
+      }
+      if (Objects.nonNull(apiDataDictionaries)) {
+        apiDataDictionaries.forEach(
+                apiDataDictionary -> {
+                  String className = apiDataDictionary.getEnumClassName();
+                  apiDataDictionary.setEnumClass(getClassByClassName(className, classLoader));
+                }
+        );
+      }
+      if (Objects.nonNull(apiConstants)) {
+        apiConstants.forEach(
+                apiConstant -> {
+                  String className = apiConstant.getConstantsClassName();
+                  apiConstant.setConstantsClass(getClassByClassName(className, classLoader));
+                }
+        );
+      }
+      if (Objects.nonNull(responseBodyAdvice) && StringUtil.isNotEmpty(responseBodyAdvice.getClassName())) {
+        responseBodyAdvice.setWrapperClass(getClassByClassName(responseBodyAdvice.getClassName(), classLoader));
+      }
+      if (Objects.nonNull(requestBodyAdvice) && StringUtil.isNotEmpty(requestBodyAdvice.getClassName())) {
+        requestBodyAdvice.setWrapperClass(getClassByClassName(requestBodyAdvice.getClassName(), classLoader));
+      }
+
+      if (StringUtil.isEmpty(apiConfig.getProjectName()) && StringUtil.isEmpty(projectName)) {
+        apiConfig.setProjectName(project.getName());
+      } else if (StringUtil.isNotEmpty(apiConfig.getProjectName())
+              && "${project.artifactId}".equals(apiConfig.getProjectName())) {
+        apiConfig.setProjectName(project.getArtifactId());
+      } else if (StringUtil.isNotEmpty(projectName)) {
+        apiConfig.setProjectName(projectName);
+      }
+      addSourcePaths(project, projectBuilder, mavenSession, apiConfig, projectArtifacts, log);
+      return apiConfig;
+  }
+
   /**
    * Build ApiConfig
    *

@@ -22,9 +22,12 @@
  */
 package com.smartdoc.mojo;
 
+import com.fasterxml.jackson.databind.util.BeanUtil;
+import com.google.common.collect.Sets;
 import com.power.common.constants.Charset;
 import com.power.common.util.CollectionUtil;
 import com.power.common.util.DateTimeUtil;
+import com.power.common.util.PropertiesUtil;
 import com.power.common.util.RegexUtil;
 import com.power.common.util.StringUtil;
 import com.power.doc.helper.JavaProjectBuilderHelper;
@@ -39,6 +42,7 @@ import com.thoughtworks.qdox.JavaProjectBuilder;
 import com.thoughtworks.qdox.library.ErrorHandler;
 import com.thoughtworks.qdox.library.SortedClassLibraryBuilder;
 import com.thoughtworks.qdox.parser.ParseException;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.repository.ArtifactRepository;
 import org.apache.maven.artifact.resolver.ArtifactResolutionRequest;
@@ -48,9 +52,11 @@ import org.apache.maven.artifact.resolver.filter.ScopeArtifactFilter;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.plugin.Mojo;
 import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugin.descriptor.MojoDescriptor;
 import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.DefaultProjectBuildingRequest;
@@ -61,6 +67,7 @@ import org.apache.maven.repository.RepositorySystem;
 import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder;
 import org.apache.maven.shared.dependency.graph.DependencyGraphBuilderException;
 import org.apache.maven.shared.dependency.graph.DependencyNode;
+import org.apache.maven.shared.utils.PropertyUtils;
 
 import java.io.File;
 import java.net.URL;
@@ -96,9 +103,6 @@ public abstract class BaseDocsGeneratorMojo extends AbstractMojo {
     @Parameter(property = "scope")
     private String scope;
 
-    @Parameter(property = "configFile", defaultValue = GlobalConstants.DEFAULT_CONFIG)
-    private File configFile;
-
     @Parameter(property = "projectName")
     private String projectName;
 
@@ -114,6 +118,9 @@ public abstract class BaseDocsGeneratorMojo extends AbstractMojo {
     @Parameter(defaultValue = "${mojoExecution}")
     private MojoExecution mojoEx;
 
+    @Parameter
+    private MojoDescriptor mojoDescriptor;
+
     private DependencyNode rootNode;
 
     protected JavaProjectBuilder javaProjectBuilder;
@@ -126,26 +133,68 @@ public abstract class BaseDocsGeneratorMojo extends AbstractMojo {
 
     public abstract void executeMojo(ApiConfig apiConfig, JavaProjectBuilder javaProjectBuilder)
             throws MojoExecutionException, MojoFailureException;
+    public void resolveUserProperties() {
+        Properties userProps = session.getUserProperties();
+        userProps.forEach((key, value) -> {
+            if (StringUtils.equals((String) key, "smartDoc.includes")) {
+                String[] values = StringUtils.split((String) value, ',');
+                if (includes == null) {
+                    includes = new HashSet();
+                }
+                for (String s : values) {
+                    includes.add(s);
+                }
+            } else if (StringUtils.equals((String) key, "smartDoc.excludes")) {
+                String[] values = StringUtils.split((String) value, ',');
+                if (excludes == null) {
+                    excludes = new HashSet();
+                }
+                for (String s : values) {
+                    excludes.add(s);
+                }
+            }
+        });
+    }
+    public ApiConfig resolveApiConfig() {
+        Properties userProps = session.getUserProperties();
+        Map<String, Object> userMap = new HashMap<>();
+        userProps.forEach((key, value) -> {
+            if (StringUtils.startsWith((String) key, "smartDoc.apiConfig.")) {
+                resolveUserProperty(userMap, StringUtils.substring((String) key, 19), (String) value);
+            }
+        });
+        String json = MojoUtils.GSON.toJson(userMap);
+        return MojoUtils.GSON.fromJson(json, ApiConfig.class);
+    }
+
+    public void resolveUserProperty(Map<String, Object> map, String key, String value) {
+        String[] parts = StringUtils.split(key, '.');
+        if (parts.length == 1) {
+            map.put(key, value);
+        } else {
+            String realKey = parts[0];
+            Map<String, Object> subMap = (Map<String, Object>) map.get(realKey);
+            if (subMap == null) {
+                subMap = new HashMap<>();
+                map.put(realKey, subMap);
+            }
+            resolveUserProperty(subMap, StringUtils.substring(key, realKey.length() + 1), value);
+        }
+    }
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
-
         //skip
         if ("true".equals(skip)) {
             return;
         }
-        if (Objects.nonNull(configFile) && !configFile.exists()) {
-            // Throwing an exception will cause an error in the multi-module maven project build.
-            this.getLog().warn("Can't find config file: " + configFile.getName() + " from [" + project.getName()
-                    + "],If it is a non-web module, please ignore the error.");
-            return;
-        }
         this.getLog().info("------------------------------------------------------------------------");
         this.getLog().info("Smart-doc Start preparing sources at: " + DateTimeUtil.nowStrTime());
-        projectArtifacts = project.getDependencies().stream().map(moduleName-> moduleName.getGroupId() + ":"+moduleName.getArtifactId()).collect(Collectors.toList());
+        resolveUserProperties();
+        projectArtifacts = project.getDependencies().stream().map(moduleName -> moduleName.getGroupId() + ":" + moduleName.getArtifactId()).collect(Collectors.toList());
         javaProjectBuilder = buildJavaProjectBuilder();
         javaProjectBuilder.setEncoding(Charset.DEFAULT_CHARSET);
-        ApiConfig apiConfig = MojoUtils.buildConfig(configFile, projectName, project, projectBuilder, session, projectArtifacts, getLog());
+        ApiConfig apiConfig = MojoUtils.buildConfig(resolveApiConfig(), projectName, project, projectBuilder, session, projectArtifacts, getLog());
         if (Objects.isNull(apiConfig)) {
             this.getLog().info(GlobalConstants.ERROR_MSG);
             return;
@@ -156,7 +205,7 @@ public abstract class BaseDocsGeneratorMojo extends AbstractMojo {
         }
 
         String goal = mojoEx.getGoal();
-        String outPath = apiConfig.getOutPath();
+        String outPath = StringUtils.defaultIfBlank(apiConfig.getOutPath(), "./smart-doc");
         if (StringUtil.isEmpty(outPath)) {
             if (!MojoConstants.TORNA_REST_MOJO.equals(goal) && !MojoConstants.TORNA_RPC_MOJO.equals(goal)) {
                 this.getLog().error("Smart-doc out path can't be null or empty.");
@@ -181,9 +230,9 @@ public abstract class BaseDocsGeneratorMojo extends AbstractMojo {
      * @throws MojoExecutionException
      */
     private JavaProjectBuilder buildJavaProjectBuilder() throws MojoExecutionException {
-        SortedClassLibraryBuilder classLibraryBuilder=new SortedClassLibraryBuilder();
-        classLibraryBuilder.setErrorHander(e -> getLog().error("Parse error",e));
-        JavaProjectBuilder javaDocBuilder =  JavaProjectBuilderHelper.create(classLibraryBuilder);
+        SortedClassLibraryBuilder classLibraryBuilder = new SortedClassLibraryBuilder();
+        classLibraryBuilder.setErrorHander(e -> getLog().error("Parse error", e));
+        JavaProjectBuilder javaDocBuilder = JavaProjectBuilderHelper.create(classLibraryBuilder);
         javaDocBuilder.setEncoding(Charset.DEFAULT_CHARSET);
         javaDocBuilder.setErrorHandler(e -> getLog().warn(e.getMessage()));
         //addSourceTree

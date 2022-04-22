@@ -22,12 +22,9 @@
  */
 package com.smartdoc.mojo;
 
-import com.fasterxml.jackson.databind.util.BeanUtil;
-import com.google.common.collect.Sets;
 import com.power.common.constants.Charset;
 import com.power.common.util.CollectionUtil;
 import com.power.common.util.DateTimeUtil;
-import com.power.common.util.PropertiesUtil;
 import com.power.common.util.RegexUtil;
 import com.power.common.util.StringUtil;
 import com.power.doc.helper.JavaProjectBuilderHelper;
@@ -39,9 +36,7 @@ import com.smartdoc.util.ClassLoaderUtil;
 import com.smartdoc.util.FileUtil;
 import com.smartdoc.util.MojoUtils;
 import com.thoughtworks.qdox.JavaProjectBuilder;
-import com.thoughtworks.qdox.library.ErrorHandler;
 import com.thoughtworks.qdox.library.SortedClassLibraryBuilder;
-import com.thoughtworks.qdox.parser.ParseException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.repository.ArtifactRepository;
@@ -52,7 +47,6 @@ import org.apache.maven.artifact.resolver.filter.ScopeArtifactFilter;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.AbstractMojo;
-import org.apache.maven.plugin.Mojo;
 import org.apache.maven.plugin.MojoExecution;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -67,7 +61,6 @@ import org.apache.maven.repository.RepositorySystem;
 import org.apache.maven.shared.dependency.graph.DependencyGraphBuilder;
 import org.apache.maven.shared.dependency.graph.DependencyGraphBuilderException;
 import org.apache.maven.shared.dependency.graph.DependencyNode;
-import org.apache.maven.shared.utils.PropertyUtils;
 
 import java.io.File;
 import java.net.URL;
@@ -133,6 +126,7 @@ public abstract class BaseDocsGeneratorMojo extends AbstractMojo {
 
     public abstract void executeMojo(ApiConfig apiConfig, JavaProjectBuilder javaProjectBuilder)
             throws MojoExecutionException, MojoFailureException;
+
     public void resolveUserProperties() {
         Properties userProps = session.getUserProperties();
         userProps.forEach((key, value) -> {
@@ -155,6 +149,7 @@ public abstract class BaseDocsGeneratorMojo extends AbstractMojo {
             }
         });
     }
+
     public ApiConfig resolveApiConfig() {
         Properties userProps = session.getUserProperties();
         Map<String, Object> userMap = new HashMap<>();

@@ -43,6 +43,8 @@ public interface MojoConstants {
 
     String RPC_MARKDOWN_MOJO = "rpc-markdown";
 
+    String HTTP_MESSAGE_MOJO = "http-message";
+
     String TORNA_REST_MOJO = "torna-rest";
 
     String TORNA_RPC_MOJO = "torna-rpc";
